@@ -1,4 +1,5 @@
 from datetime import datetime
+import difflib
 import os
 import sys
 
@@ -23,6 +24,135 @@ if "history" not in st.session_state:
     st.session_state["history"] = []
 if "chat_messages" not in st.session_state:
     st.session_state["chat_messages"] = []
+
+
+def render_top_nav() -> None:
+    items = [
+        "💻 Code Editor",
+        "📊 Analysis Report",
+        "🤖 AI Assistant",
+        "📜 History",
+    ]
+    current_page = st.session_state.get("page", "💻 Code Editor")
+    selected = st.radio(
+        "Top Navigation",
+        items,
+        index=items.index(current_page),
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    if selected != current_page:
+        st.session_state["page"] = selected
+        st.rerun()
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+
+def _escape_html(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace(" ", "&nbsp;")
+    )
+
+
+def _line_box_html(line_no: str, text: str, kind: str) -> str:
+    if kind == "add":
+        bg = "#d5f5dc"
+        color = "#1f5e31"
+    elif kind == "remove":
+        bg = "#f8d1d1"
+        color = "#7e1f1f"
+    elif kind == "changed":
+        bg = "#f3e7bf"
+        color = "#5f4a00"
+    else:
+        bg = "#ffffff"
+        color = "#2f2f2f"
+
+    safe_text = _escape_html(text)
+    safe_line = _escape_html(line_no)
+    return (
+        f'<div style="font-family:Consolas,monospace;font-size:16px;background:{bg};'
+        f'padding:1px 8px;border-bottom:1px solid #d2d2d2;white-space:pre;line-height:1.35">'
+        f'<span style="color:#4f4f4f;display:inline-block;min-width:42px">{safe_line}</span>'
+        f'<span style="color:{color}">{safe_text}</span></div>'
+    )
+
+
+def render_side_by_side_diff(original_code: str, improved_code: str) -> None:
+    orig_lines = original_code.splitlines()
+    impr_lines = improved_code.splitlines()
+    matcher = difflib.SequenceMatcher(a=orig_lines, b=impr_lines)
+
+    left_rows = []
+    right_rows = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for o_idx, i_idx in zip(range(i1, i2), range(j1, j2)):
+                left_rows.append((str(o_idx + 1), orig_lines[o_idx], "equal"))
+                right_rows.append((str(i_idx + 1), impr_lines[i_idx], "equal"))
+        elif tag == "replace":
+            left_block = orig_lines[i1:i2]
+            right_block = impr_lines[j1:j2]
+            block_matcher = difflib.SequenceMatcher(a=left_block, b=right_block)
+            for btag, bi1, bi2, bj1, bj2 in block_matcher.get_opcodes():
+                if btag == "equal":
+                    for lk, rk in zip(range(bi1, bi2), range(bj1, bj2)):
+                        left_rows.append((str(i1 + lk + 1), left_block[lk], "equal"))
+                        right_rows.append((str(j1 + rk + 1), right_block[rk], "equal"))
+                elif btag == "replace":
+                    span = max(bi2 - bi1, bj2 - bj1)
+                    for k in range(span):
+                        if bi1 + k < bi2:
+                            left_rows.append((str(i1 + bi1 + k + 1), left_block[bi1 + k], "remove"))
+                        else:
+                            left_rows.append(("", "", "equal"))
+                        if bj1 + k < bj2:
+                            right_rows.append((str(j1 + bj1 + k + 1), right_block[bj1 + k], "add"))
+                        else:
+                            right_rows.append(("", "", "equal"))
+                elif btag == "delete":
+                    for lk in range(bi1, bi2):
+                        left_rows.append((str(i1 + lk + 1), left_block[lk], "remove"))
+                        right_rows.append(("", "", "equal"))
+                elif btag == "insert":
+                    for rk in range(bj1, bj2):
+                        left_rows.append(("", "", "equal"))
+                        right_rows.append((str(j1 + rk + 1), right_block[rk], "add"))
+        elif tag == "delete":
+            for o_idx in range(i1, i2):
+                left_rows.append((str(o_idx + 1), orig_lines[o_idx], "remove"))
+                right_rows.append(("", "", "equal"))
+        elif tag == "insert":
+            for i_idx in range(j1, j2):
+                left_rows.append(("", "", "equal"))
+                right_rows.append((str(i_idx + 1), impr_lines[i_idx], "add"))
+
+    if original_code.strip() == improved_code.strip():
+        st.info("No code changes suggested in this run. Original and Improved are identical.")
+
+    left_html = "".join(_line_box_html(line_no, text, kind) for line_no, text, kind in left_rows)
+    right_html = "".join(
+        _line_box_html(line_no, text, kind) for line_no, text, kind in right_rows
+    )
+
+    st.markdown(
+        f"""
+        <div style="display:grid;grid-template-columns:50% 50%;gap:0;border:1px solid #8f8f8f;border-radius:4px;overflow:hidden;background:#d9d9d9;width:100%;">
+            <div style="border-right:1px solid #8f8f8f;min-width:0;">
+                <div style="background:#cfcfcf;color:#1f1f1f;padding:6px 8px;font-weight:700;text-align:center;border-bottom:1px solid #8f8f8f;">Original</div>
+                <div style="max-height:560px;overflow:auto;background:#efefef;">{left_html}</div>
+            </div>
+            <div style="min-width:0;">
+                <div style="background:#cfcfcf;color:#1f1f1f;padding:6px 8px;font-weight:700;text-align:center;border-bottom:1px solid #8f8f8f;">Improved</div>
+                <div style="max-height:560px;overflow:auto;background:#efefef;">{right_html}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 st.markdown(
     """
@@ -50,7 +180,7 @@ st.markdown(
     }
 
     .block-container {
-      padding-top: 1.2rem;
+            padding-top: 2.4rem;
       padding-bottom: 2rem;
       max-width: 1200px;
     }
@@ -94,17 +224,6 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 st.sidebar.divider()
-
-page = st.sidebar.radio(
-    "Navigation",
-    ["💻 Code Editor", "📊 Analysis Report", "🤖 AI Assistant", "📜 History"],
-    index=["💻 Code Editor", "📊 Analysis Report", "🤖 AI Assistant", "📜 History"].index(
-        st.session_state.get("page", "💻 Code Editor")
-    ),
-)
-st.session_state["page"] = page
-
-st.sidebar.divider()
 st.sidebar.write("Source Language: Python")
 st.session_state["language"] = "Python"
 
@@ -112,6 +231,8 @@ st.sidebar.multiselect(
     "Focus Areas",
     ["Security", "Performance", "Best Practices", "Code Style", "Documentation"],
 )
+
+render_top_nav()
 
 if st.session_state["page"] == "💻 Code Editor":
     st.title("Intelligent Code Analysis")
@@ -158,6 +279,11 @@ if st.session_state["page"] == "📊 Analysis Report":
         st.info("No analysis yet. Go to Code Editor and analyze code first.")
     else:
         st.title("Analysis Report")
+
+        if result.get("ai_fallback", False):
+            st.warning(
+                "AI response format was invalid, so fallback output was used for this run."
+            )
 
         col1, col2, col3 = st.columns(3)
         col1.metric("QUALITY GRADE", result.get("quality_grade", "N/A"))
@@ -210,28 +336,9 @@ if st.session_state["page"] == "📊 Analysis Report":
 
         with st.expander("📊 Compare Changes (Diff View)", expanded=True):
             st.subheader("Side-by-Side Comparison")
-            orig_lines = result.get("original_code", "").splitlines()
-            impr_lines = result.get("improved_code", "").splitlines()
-
-            diff_col1, diff_col2 = st.columns(2)
-            with diff_col1:
-                st.markdown("**Original**")
-                for i, line in enumerate(orig_lines):
-                    st.markdown(
-                        f'<div style="font-family:monospace;font-size:13px;background:#ff000015;padding:2px 8px">'
-                        f'<span style="color:#555">{i+1}</span> '
-                        f'<span style="color:#ff6b6b">{line}</span></div>',
-                        unsafe_allow_html=True,
-                    )
-            with diff_col2:
-                st.markdown("**Improved**")
-                for i, line in enumerate(impr_lines):
-                    st.markdown(
-                        f'<div style="font-family:monospace;font-size:13px;background:#00ff0015;padding:2px 8px">'
-                        f'<span style="color:#555">{i+1}</span> '
-                        f'<span style="color:#69f0ae">{line}</span></div>',
-                        unsafe_allow_html=True,
-                    )
+            render_side_by_side_diff(
+                result.get("original_code", ""), result.get("improved_code", "")
+            )
 
         with st.expander("🔍 Static Analysis Findings"):
             static = result.get("static_analysis", {})
