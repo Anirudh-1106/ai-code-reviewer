@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ai_suggestor import get_ai_review
 from code_parser import parse_code
+from code_visitor import track_variable_context
 from error_detector import report_unused
 
 
@@ -71,6 +72,7 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
         return {"error": message, "success": False}
 
     issues = report_unused(code_string)
+    variable_context = track_variable_context(code_string)
     ai_review = get_ai_review(code_string, issues, language)
     if not isinstance(ai_review, dict):
         ai_review = {
@@ -128,5 +130,6 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
         "detailed_explanations": ai_review.get("detailed_explanations", {}),
         "ai_fallback": bool(ai_review.get("ai_fallback", False)),
         "static_analysis": issues,
+        "variable_context": variable_context,
         "diff_lines": diff_lines,
     }

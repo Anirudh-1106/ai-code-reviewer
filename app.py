@@ -1,8 +1,12 @@
 from datetime import datetime
 import difflib
+from io import BytesIO
 import os
 import sys
+import textwrap
 
+from reportlab.lib.pagesizes import LETTER
+from reportlab.pdfgen import canvas
 import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,6 +30,67 @@ if "chat_messages" not in st.session_state:
     st.session_state["chat_messages"] = []
 
 
+def _build_markdown_report(result: dict) -> str:
+    return f"""# Code Review Report
+**Quality Grade:** {result.get('quality_grade','N/A')}
+**Issues Found:** {result.get('issues_count',0)}
+
+## Analysis Summary
+{result.get('analysis_summary','')}
+
+## Issues Found
+{chr(10).join(['- ' + i for i in result.get('issues_found',[])])}
+
+## Improved Code
+```python
+{result.get('improved_code','')}
+```
+
+## Detailed Explanations
+### Scalability Impact
+{result.get('detailed_explanations',{}).get('scalability_impact','')}
+
+### Time/Space Complexity
+{result.get('detailed_explanations',{}).get('time_space_complexity','')}
+
+### Security Vulnerabilities
+{result.get('detailed_explanations',{}).get('security_vulnerabilities','')}
+
+### Best Practices
+{result.get('detailed_explanations',{}).get('best_practices','')}
+"""
+
+
+def _build_pdf_report_bytes(report_text: str) -> bytes:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=LETTER)
+    width, height = LETTER
+
+    margin_x = 42
+    margin_top = 50
+    margin_bottom = 42
+    chars_per_line = 100
+
+    text_obj = pdf.beginText(margin_x, height - margin_top)
+    text_obj.setFont("Helvetica", 10)
+
+    for raw_line in report_text.splitlines():
+        wrapped_lines = textwrap.wrap(raw_line, width=chars_per_line) or [""]
+        for line in wrapped_lines:
+            if text_obj.getY() <= margin_bottom:
+                pdf.drawText(text_obj)
+                pdf.showPage()
+                text_obj = pdf.beginText(margin_x, height - margin_top)
+                text_obj.setFont("Helvetica", 10)
+            text_obj.textLine(line)
+
+    pdf.drawText(text_obj)
+    pdf.save()
+
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def render_top_nav() -> None:
     items = [
         "💻 Code Editor",
@@ -40,6 +105,7 @@ def render_top_nav() -> None:
         index=items.index(current_page),
         horizontal=True,
         label_visibility="collapsed",
+        key="top_navigation",
     )
     if selected != current_page:
         st.session_state["page"] = selected
@@ -206,6 +272,45 @@ st.markdown(
       margin: 2px 0 0 0;
     }
 
+        div[role="radiogroup"] {
+            background: rgba(79, 195, 247, 0.08);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 6px;
+            gap: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            width: fit-content;
+            margin-bottom: 6px;
+        }
+
+        div[role="radiogroup"] label {
+            border: 1px solid transparent;
+            border-radius: 999px;
+            padding: 4px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            transition: all 0.2s ease;
+            min-height: 36px;
+            display: inline-flex !important;
+            align-items: center;
+        }
+
+        div[role="radiogroup"] label:hover {
+            border-color: rgba(79, 195, 247, 0.45);
+            background: rgba(79, 195, 247, 0.15);
+        }
+
+        div[role="radiogroup"] label:has(input:checked) {
+            background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+            border-color: rgba(14, 165, 233, 0.9);
+            box-shadow: 0 4px 18px rgba(14, 165, 233, 0.35);
+        }
+
+        div[role="radiogroup"] label:has(input:checked) span {
+            color: #03131d !important;
+            font-weight: 700 !important;
+        }
+
     div[data-testid="stMetricValue"] {
       color: var(--accent-green);
     }
@@ -302,37 +407,25 @@ if st.session_state["page"] == "📊 Analysis Report":
                     st.rerun()
 
         with bcol2:
-            md_report = f"""# Code Review Report
-**Quality Grade:** {result.get('quality_grade','N/A')}
-**Issues Found:** {result.get('issues_count',0)}
-
-## Analysis Summary
-{result.get('analysis_summary','')}
-
-## Issues Found
-{chr(10).join(['- ' + i for i in result.get('issues_found',[])])}
-
-## Improved Code
-```python
-{result.get('improved_code','')}
-```
-
-## Detailed Explanations
-### Scalability Impact
-{result.get('detailed_explanations',{}).get('scalability_impact','')}
-
-### Time/Space Complexity
-{result.get('detailed_explanations',{}).get('time_space_complexity','')}
-
-### Security Vulnerabilities
-{result.get('detailed_explanations',{}).get('security_vulnerabilities','')}
-
-### Best Practices
-{result.get('detailed_explanations',{}).get('best_practices','')}
-"""
-            st.download_button(
-                "📥 Download Report (MD)", md_report, "review_report.md", "text/markdown"
-            )
+            md_report = _build_markdown_report(result)
+            pdf_report = _build_pdf_report_bytes(md_report)
+            dcol1, dcol2 = st.columns(2)
+            with dcol1:
+                st.download_button(
+                    "📥 Download Report (MD)",
+                    md_report,
+                    "review_report.md",
+                    "text/markdown",
+                    key="download_report_md",
+                )
+            with dcol2:
+                st.download_button(
+                    "📄 Download Report (PDF)",
+                    pdf_report,
+                    "review_report.pdf",
+                    "application/pdf",
+                    key="download_report_pdf",
+                )
 
         with st.expander("📊 Compare Changes (Diff View)", expanded=True):
             st.subheader("Side-by-Side Comparison")

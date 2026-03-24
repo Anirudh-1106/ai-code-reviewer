@@ -5,3 +5,7 @@ langchain-groq
 python-dotenv
 streamlit
 anthropic
+reportlab
+reflex
+
+reflex==0.8.28.post1
