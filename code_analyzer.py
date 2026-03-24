@@ -1,3 +1,5 @@
+import builtins
+import ast
 import difflib
 import os
 import sys
@@ -33,6 +35,176 @@ def _merge_issue_lists(static_issues: list, ai_issues: list) -> list:
             seen.add(key)
             merged.append(text)
     return merged
+
+
+class _ScopeAwareUndefinedNameVisitor(ast.NodeVisitor):
+    def __init__(self):
+        self.builtins = set(dir(builtins))
+        self.scope_stack = [set(self.builtins)]
+        self.undefined = []
+        self._seen = set()
+
+    def _push_scope(self, initial=None):
+        self.scope_stack.append(set(initial or []))
+
+    def _pop_scope(self):
+        self.scope_stack.pop()
+
+    def _define(self, name: str):
+        if name:
+            self.scope_stack[-1].add(name)
+
+    def _is_defined(self, name: str) -> bool:
+        if not name:
+            return True
+        if name.startswith("__") and name.endswith("__"):
+            return True
+        for scope in reversed(self.scope_stack):
+            if name in scope:
+                return True
+        return False
+
+    def _collect_target_names(self, node):
+        names = []
+        if isinstance(node, ast.Name):
+            names.append(node.id)
+        elif isinstance(node, (ast.Tuple, ast.List)):
+            for elt in node.elts:
+                names.extend(self._collect_target_names(elt))
+        elif isinstance(node, ast.Starred):
+            names.extend(self._collect_target_names(node.value))
+        return names
+
+    def _mark_undefined(self, name: str, line):
+        if self._is_defined(name):
+            return
+        key = (name, line)
+        if key in self._seen:
+            return
+        self._seen.add(key)
+        self.undefined.append(f"Undefined variable: {name} (line {line})")
+
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Load):
+            self._mark_undefined(node.id, getattr(node, "lineno", "?"))
+        elif isinstance(node.ctx, ast.Store):
+            self._define(node.id)
+        self.generic_visit(node)
+
+    def visit_Import(self, node):
+        for alias in node.names:
+            self._define(alias.asname or alias.name.split(".")[0])
+
+    def visit_ImportFrom(self, node):
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+            self._define(alias.asname or alias.name)
+
+    def visit_Assign(self, node):
+        self.visit(node.value)
+        for target in node.targets:
+            for name in self._collect_target_names(target):
+                self._define(name)
+
+    def visit_AnnAssign(self, node):
+        if node.value is not None:
+            self.visit(node.value)
+        if node.annotation is not None:
+            self.visit(node.annotation)
+        for name in self._collect_target_names(node.target):
+            self._define(name)
+
+    def visit_AugAssign(self, node):
+        self.visit(node.target)
+        self.visit(node.value)
+        for name in self._collect_target_names(node.target):
+            self._define(name)
+
+    def visit_For(self, node):
+        self.visit(node.iter)
+        for name in self._collect_target_names(node.target):
+            self._define(name)
+        for stmt in node.body:
+            self.visit(stmt)
+        for stmt in node.orelse:
+            self.visit(stmt)
+
+    def visit_With(self, node):
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                for name in self._collect_target_names(item.optional_vars):
+                    self._define(name)
+        for stmt in node.body:
+            self.visit(stmt)
+
+    def visit_ExceptHandler(self, node):
+        if node.type is not None:
+            self.visit(node.type)
+        if node.name:
+            self._define(node.name)
+        for stmt in node.body:
+            self.visit(stmt)
+
+    def visit_FunctionDef(self, node):
+        self._define(node.name)
+
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for arg in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
+            if arg.annotation is not None:
+                self.visit(arg.annotation)
+        if node.args.vararg and node.args.vararg.annotation is not None:
+            self.visit(node.args.vararg.annotation)
+        if node.args.kwarg and node.args.kwarg.annotation is not None:
+            self.visit(node.args.kwarg.annotation)
+        if node.returns is not None:
+            self.visit(node.returns)
+        for default in list(node.args.defaults) + list(node.args.kw_defaults):
+            if default is not None:
+                self.visit(default)
+
+        func_scope_names = [
+            arg.arg for arg in (list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs))
+        ]
+        if node.args.vararg:
+            func_scope_names.append(node.args.vararg.arg)
+        if node.args.kwarg:
+            func_scope_names.append(node.args.kwarg.arg)
+
+        self._push_scope(func_scope_names)
+        for stmt in node.body:
+            self.visit(stmt)
+        self._pop_scope()
+
+    def visit_AsyncFunctionDef(self, node):
+        self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node):
+        self._define(node.name)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword)
+
+        self._push_scope()
+        for stmt in node.body:
+            self.visit(stmt)
+        self._pop_scope()
+
+
+def _undefined_variable_strings(code_string: str) -> list:
+    try:
+        tree = ast.parse(code_string)
+    except SyntaxError:
+        return []
+
+    visitor = _ScopeAwareUndefinedNameVisitor()
+    visitor.visit(tree)
+    return visitor.undefined
 
 
 def _normalize_improved_code(value, original_code: str) -> str:
@@ -89,6 +261,7 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
     )
 
     static_issues = _static_issue_strings(issues)
+    static_issues += _undefined_variable_strings(code_string)
     ai_issues = ai_review.get("issues_found", [])
     if not isinstance(ai_issues, list):
         ai_issues = [str(ai_issues)]

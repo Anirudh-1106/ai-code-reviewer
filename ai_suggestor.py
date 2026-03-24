@@ -1,3 +1,5 @@
+import ast
+import difflib
 import json
 import os
 import re
@@ -110,6 +112,43 @@ def _looks_like_non_code_payload(text: str) -> bool:
     return False
 
 
+def _count_defs(source: str) -> int:
+    try:
+        tree = ast.parse(source)
+    except Exception:
+        return 0
+    return sum(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) for node in ast.walk(tree))
+
+
+def _is_overexpanded_rewrite(original_code: str, candidate_code: str) -> bool:
+    original = original_code.strip()
+    candidate = candidate_code.strip()
+    if not original or not candidate:
+        return False
+
+    orig_lines = len(original.splitlines())
+    cand_lines = len(candidate.splitlines())
+
+    # Tiny inputs should not explode into large unrelated templates.
+    if orig_lines <= 3 and cand_lines > 12:
+        return True
+
+    # For any input, reject extreme growth in rewritten output.
+    if cand_lines > max(30, orig_lines * 6):
+        return True
+
+    similarity = difflib.SequenceMatcher(None, original, candidate).ratio()
+    if orig_lines <= 8 and cand_lines > (orig_lines * 3) and similarity < 0.2:
+        return True
+
+    original_defs = _count_defs(original)
+    candidate_defs = _count_defs(candidate)
+    if original_defs == 0 and candidate_defs >= 3 and cand_lines > (orig_lines * 2):
+        return True
+
+    return False
+
+
 def get_review_metadata(code_string: str, issues: dict, language: str) -> dict:
     llm = _build_model()
     issues_text = _issues_text(issues, include_lines=True)
@@ -207,6 +246,8 @@ OUTPUT RULES:
     code = _strip_code_fences(raw)
 
     if _looks_like_non_code_payload(code):
+        return code_string
+    if _is_overexpanded_rewrite(code_string, code):
         return code_string
     return code
 
