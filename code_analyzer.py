@@ -10,6 +10,7 @@ from ai_suggestor import get_ai_review
 from code_parser import parse_code
 from code_visitor import track_variable_context
 from error_detector import report_unused
+from style_analyzer import analyze_pep8
 
 
 def _static_issue_strings(issues: dict) -> list:
@@ -35,6 +36,17 @@ def _merge_issue_lists(static_issues: list, ai_issues: list) -> list:
             seen.add(key)
             merged.append(text)
     return merged
+
+
+def _pep8_issue_strings(violations: list) -> list:
+    output = []
+    for violation in violations:
+        code = violation.get("code", "PEP8")
+        message = violation.get("message", "Style violation")
+        line = violation.get("line", "?")
+        column = violation.get("column", "?")
+        output.append(f"PEP 8 ({code}): {message} (line {line}, col {column})")
+    return output
 
 
 class _ScopeAwareUndefinedNameVisitor(ast.NodeVisitor):
@@ -244,6 +256,7 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
         return {"error": message, "success": False}
 
     issues = report_unused(code_string)
+    pep8_violations = analyze_pep8(code_string)
     variable_context = track_variable_context(code_string)
     ai_review = get_ai_review(code_string, issues, language)
     if not isinstance(ai_review, dict):
@@ -262,6 +275,7 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
 
     static_issues = _static_issue_strings(issues)
     static_issues += _undefined_variable_strings(code_string)
+    static_issues += _pep8_issue_strings(pep8_violations)
     ai_issues = ai_review.get("issues_found", [])
     if not isinstance(ai_issues, list):
         ai_issues = [str(ai_issues)]
@@ -292,6 +306,9 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
             line_type = "equal"
         diff_lines.append({"type": line_type, "line": line, "num": idx})
 
+    static_analysis = dict(issues)
+    static_analysis["pep8_violations"] = pep8_violations
+
     return {
         "success": True,
         "quality_grade": ai_review.get("quality_grade", "N/A"),
@@ -302,7 +319,7 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
         "issues_found": merged_issues,
         "detailed_explanations": ai_review.get("detailed_explanations", {}),
         "ai_fallback": bool(ai_review.get("ai_fallback", False)),
-        "static_analysis": issues,
+        "static_analysis": static_analysis,
         "variable_context": variable_context,
         "diff_lines": diff_lines,
     }

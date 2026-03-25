@@ -193,6 +193,11 @@ def posts() -> rx.Component:
                     ReviewerState.unused_variables,
                     lambda item: rx.text(item, color="#e2e8f0", width="100%"),
                 ),
+                rx.text("PEP 8 Violations", color="#93c5fd", font_weight="600", margin_top="0.75rem"),
+                rx.foreach(
+                    ReviewerState.pep8_violations,
+                    lambda item: rx.text(item, color="#e2e8f0", width="100%"),
+                ),
                 width="100%",
                 border="1px solid #334155",
                 border_radius="12px",

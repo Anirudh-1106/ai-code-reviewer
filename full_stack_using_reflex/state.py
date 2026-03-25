@@ -21,6 +21,7 @@ class ReviewerState(rx.State):
     unused_imports: list[str] = []
     unused_functions: list[str] = []
     unused_variables: list[str] = []
+    pep8_violations: list[str] = []
     created_variables: list[str] = []
     used_variables: list[str] = []
     history_entries: list[dict[str, str]] = []
@@ -143,6 +144,11 @@ class ReviewerState(rx.State):
         self.unused_variables = [
             f"{item.get('name', 'unknown')} - line {item.get('line', '?')}"
             for item in static.get("unused_variables", [])
+        ]
+        self.pep8_violations = [
+            f"{item.get('code', 'PEP8')} - {item.get('message', 'Style violation')} "
+            f"(line {item.get('line', '?')}, col {item.get('column', '?')})"
+            for item in static.get("pep8_violations", [])
         ]
 
         variable_context = result.get("variable_context", {})
