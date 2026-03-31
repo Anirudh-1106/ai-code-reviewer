@@ -10,7 +10,10 @@ from ai_suggestor import get_ai_review
 from code_parser import parse_code
 from code_visitor import track_variable_context
 from error_detector import report_unused
-from style_analyzer import analyze_pep8
+from external_linters import analyze_external_linters
+from generic_static import generic_undefined_identifiers
+from language_config import normalize_language
+from style_analyzer import analyze_style
 
 
 def _static_issue_strings(issues: dict) -> list:
@@ -38,14 +41,28 @@ def _merge_issue_lists(static_issues: list, ai_issues: list) -> list:
     return merged
 
 
-def _pep8_issue_strings(violations: list) -> list:
+def _style_issue_strings(violations: list, language: str) -> list:
     output = []
     for violation in violations:
-        code = violation.get("code", "PEP8")
+        code = violation.get("code", "STYLE")
         message = violation.get("message", "Style violation")
         line = violation.get("line", "?")
         column = violation.get("column", "?")
-        output.append(f"PEP 8 ({code}): {message} (line {line}, col {column})")
+        output.append(f"{language} style ({code}): {message} (line {line}, col {column})")
+    return output
+
+
+def _external_issue_strings(violations: list, language: str) -> list:
+    output = []
+    for violation in violations:
+        tool = violation.get("tool", "linter")
+        code = violation.get("code", "LINT")
+        message = violation.get("message", "External lint issue")
+        line = violation.get("line", "?")
+        column = violation.get("column", "?")
+        output.append(
+            f"{language} {tool} ({code}): {message} (line {line}, col {column})"
+        )
     return output
 
 
@@ -219,6 +236,13 @@ def _undefined_variable_strings(code_string: str) -> list:
     return visitor.undefined
 
 
+def _undefined_identifier_strings(code_string: str, language: str) -> list:
+    normalized = normalize_language(language)
+    if normalized == "Python":
+        return _undefined_variable_strings(code_string)
+    return generic_undefined_identifiers(code_string, normalized)
+
+
 def _normalize_improved_code(value, original_code: str) -> str:
     if isinstance(value, str):
         cleaned = value.strip()
@@ -249,16 +273,20 @@ def _normalize_improved_code(value, original_code: str) -> str:
 
 
 def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
-    parse_result = parse_code(code_string)
+    normalized_language = normalize_language(language)
+
+    parse_result = parse_code(code_string, normalized_language)
     if not parse_result.get("success", False):
         error_obj = parse_result.get("error", {})
         message = error_obj.get("message", "Syntax error")
         return {"error": message, "success": False}
 
-    issues = report_unused(code_string)
-    pep8_violations = analyze_pep8(code_string)
-    variable_context = track_variable_context(code_string)
-    ai_review = get_ai_review(code_string, issues, language)
+    issues = report_unused(code_string, normalized_language)
+    style_violations = analyze_style(code_string, normalized_language)
+    external_lint = analyze_external_linters(code_string, normalized_language)
+    external_violations = external_lint.get("violations", [])
+    variable_context = track_variable_context(code_string, normalized_language)
+    ai_review = get_ai_review(code_string, issues, normalized_language)
     if not isinstance(ai_review, dict):
         ai_review = {
             "quality_grade": "N/A",
@@ -274,8 +302,9 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
     )
 
     static_issues = _static_issue_strings(issues)
-    static_issues += _undefined_variable_strings(code_string)
-    static_issues += _pep8_issue_strings(pep8_violations)
+    static_issues += _undefined_identifier_strings(code_string, normalized_language)
+    static_issues += _style_issue_strings(style_violations, normalized_language)
+    static_issues += _external_issue_strings(external_violations, normalized_language)
     ai_issues = ai_review.get("issues_found", [])
     if not isinstance(ai_issues, list):
         ai_issues = [str(ai_issues)]
@@ -307,10 +336,13 @@ def analyze_code_pipeline(code_string: str, language: str = "Python") -> dict:
         diff_lines.append({"type": line_type, "line": line, "num": idx})
 
     static_analysis = dict(issues)
-    static_analysis["pep8_violations"] = pep8_violations
+    static_analysis["style_violations"] = style_violations
+    static_analysis["external_linter_violations"] = external_violations
+    static_analysis["external_linter_tool_status"] = external_lint.get("tool_status", [])
 
     return {
         "success": True,
+        "language": normalized_language,
         "quality_grade": ai_review.get("quality_grade", "N/A"),
         "issues_count": len(merged_issues),
         "analysis_summary": ai_review.get("analysis_summary", ""),

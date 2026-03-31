@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ai_suggestor import ask_ai_assistant
 from code_analyzer import analyze_code_pipeline
+from language_config import normalize_language, supported_languages
 
 st.set_page_config(page_title="AI Code Reviewer", layout="wide")
 
@@ -31,7 +32,10 @@ if "chat_messages" not in st.session_state:
 
 
 def _build_markdown_report(result: dict) -> str:
+    language = result.get("language", st.session_state.get("language", "Python"))
+    lang_tag = str(language).lower()
     return f"""# Code Review Report
+**Language:** {language}
 **Quality Grade:** {result.get('quality_grade','N/A')}
 **Issues Found:** {result.get('issues_count',0)}
 
@@ -42,7 +46,7 @@ def _build_markdown_report(result: dict) -> str:
 {chr(10).join(['- ' + i for i in result.get('issues_found',[])])}
 
 ## Improved Code
-```python
+```{lang_tag}
 {result.get('improved_code','')}
 ```
 
@@ -329,8 +333,14 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 st.sidebar.divider()
-st.sidebar.write("Source Language: Python")
-st.session_state["language"] = "Python"
+language_options = supported_languages()
+current_language = normalize_language(st.session_state.get("language", "Python"))
+language_choice = st.sidebar.selectbox(
+    "Source Language",
+    language_options,
+    index=language_options.index(current_language),
+)
+st.session_state["language"] = normalize_language(language_choice)
 
 st.sidebar.multiselect(
     "Focus Areas",
@@ -347,7 +357,7 @@ if st.session_state["page"] == "💻 Code Editor":
     code_input = st.text_area(
         "Source Code",
         value=st.session_state.get("code_input", ""),
-        placeholder="Paste your Python code here...",
+        placeholder=f"Paste your {st.session_state.get('language', 'Python')} code here...",
         height=400,
         label_visibility="collapsed",
     )
@@ -366,6 +376,7 @@ if st.session_state["page"] == "💻 Code Editor":
                         {
                             "code": code_input[:100] + "...",
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "language": st.session_state.get("language", "Python"),
                             "grade": result.get("quality_grade", "N/A"),
                             "issues": result.get("issues_count", 0),
                         }
@@ -455,19 +466,52 @@ if st.session_state["page"] == "📊 Analysis Report":
                 for var in unused_vars:
                     st.markdown(f"- `{var['name']}` - line {var['line']}")
 
+            style_violations = static.get("style_violations", [])
+            if style_violations:
+                st.markdown("**Style Violations:**")
+                for item in style_violations:
+                    st.markdown(
+                        f"- `{item['code']}` {item['message']} (line {item['line']}, col {item['column']})"
+                    )
+
+            external_tool_status = static.get("external_linter_tool_status", [])
+            if external_tool_status:
+                st.markdown("**External Linter Tool Status:**")
+                for tool in external_tool_status:
+                    state = "available" if tool.get("available") else "not available"
+                    note = f" | {tool.get('note')}" if tool.get("note") else ""
+                    st.markdown(
+                        f"- `{tool.get('tool', 'tool')}`: {state} | issues: {tool.get('issues', 0)}{note}"
+                    )
+
+            external_violations = static.get("external_linter_violations", [])
+            if external_violations:
+                st.markdown("**External Linter Findings:**")
+                for item in external_violations:
+                    st.markdown(
+                        f"- `{item.get('tool', 'linter')}` `{item.get('code', 'LINT')}` {item.get('message', 'Issue')} "
+                        f"(line {item.get('line', '?')}, col {item.get('column', '?')})"
+                    )
+
         with st.expander("🤖 Deep Code Review", expanded=True):
             st.subheader("Analysis Summary")
             st.write(result.get("analysis_summary", ""))
 
             st.subheader("Original Code")
-            st.code(result.get("original_code", ""), language="python")
+            st.code(
+                result.get("original_code", ""),
+                language=str(result.get("language", st.session_state.get("language", "Python"))).lower(),
+            )
 
             st.subheader("Issues Found")
             for issue in result.get("issues_found", []):
                 st.markdown(f"- {issue}")
 
             st.subheader("Improved Code")
-            st.code(result.get("improved_code", ""), language="python")
+            st.code(
+                result.get("improved_code", ""),
+                language=str(result.get("language", st.session_state.get("language", "Python"))).lower(),
+            )
 
             st.subheader("Detailed Explanations")
             explanations = result.get("detailed_explanations", {})
@@ -521,6 +565,6 @@ if st.session_state["page"] == "📜 History":
             st.rerun()
         for i, entry in enumerate(reversed(history)):
             with st.expander(
-                f"Review #{len(history)-i} - {entry['timestamp']} | Grade: {entry['grade']} | Issues: {entry['issues']}"
+                f"Review #{len(history)-i} - {entry['timestamp']} | {entry.get('language', 'Python')} | Grade: {entry['grade']} | Issues: {entry['issues']}"
             ):
-                st.code(entry["code"], language="python")
+                st.code(entry["code"], language=str(entry.get("language", "python")).lower())

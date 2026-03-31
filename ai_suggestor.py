@@ -153,7 +153,7 @@ def get_review_metadata(code_string: str, issues: dict, language: str) -> dict:
     llm = _build_model()
     issues_text = _issues_text(issues, include_lines=True)
 
-    prompt = f"""You are a Python code reviewer. Analyze this {language} code and the issues found.
+    prompt = f"""You are a senior {language} code reviewer. Analyze this {language} code and the issues found.
 
 CODE:
 {code_string}
@@ -215,29 +215,28 @@ def get_improved_code(code_string: str, issues: dict, language: str) -> str:
     llm = _build_model()
     issues_text = _issues_text(issues, include_lines=False)
 
-    prompt = f"""You are a Python expert. Rewrite the following code applying ALL improvements listed.
+    prompt = f"""You are an expert {language} developer. Rewrite the following code applying ALL improvements listed.
 
 ORIGINAL CODE:
 {code_string}
 
 REQUIRED IMPROVEMENTS:
 {issues_text if issues_text else "- Improve readability and keep behavior equivalent"}
-- Replace for i in range(len(x)) with direct iteration where applicable
-- Replace nested if-else chains with cleaner expressions where applicable
-- Add type hints to all functions
-- Add a short docstring to each function
+- Keep behavior equivalent while improving clarity and maintainability
+- Apply language-idiomatic patterns and modern best practices
+- Preserve public interfaces unless they are clearly incorrect
 
 OUTPUT RULES:
-- Output ONLY raw Python code
+- Output ONLY raw {language} code
 - Do NOT include explanation
 - Do NOT include markdown
 - Do NOT include triple backticks
-- Start directly with import, class, or def
-- Output must be valid Python
+- Start directly with source code
+- Output must be valid {language}
 """
 
     messages = [
-        SystemMessage(content="You are a Python expert. Output only raw Python code with no explanation and no markdown."),
+        SystemMessage(content=f"You are a {language} expert. Output only raw {language} code with no explanation and no markdown."),
         HumanMessage(content=prompt),
     ]
 

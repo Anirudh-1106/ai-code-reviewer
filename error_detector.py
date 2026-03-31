@@ -1,5 +1,8 @@
 import ast
 
+from generic_static import generic_report_unused
+from language_config import normalize_language
+
 
 class AIReviewer(ast.NodeVisitor):
     def __init__(self):
@@ -64,7 +67,11 @@ class AIReviewer(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def report_unused(code_string: str) -> dict:
+def report_unused(code_string: str, language: str = "Python") -> dict:
+    normalized = normalize_language(language)
+    if normalized != "Python":
+        return generic_report_unused(code_string, normalized)
+
     tree = ast.parse(code_string)
     reviewer = AIReviewer()
     reviewer.visit(tree)

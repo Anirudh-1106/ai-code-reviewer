@@ -1,5 +1,8 @@
 import ast
 
+from generic_static import generic_variable_context
+from language_config import normalize_language
+
 class VariableContextTracker(ast.NodeVisitor):
     def __init__(self):
         self.created = []
@@ -13,7 +16,11 @@ class VariableContextTracker(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def track_variable_context(code_string: str) -> dict:
+def track_variable_context(code_string: str, language: str = "Python") -> dict:
+    normalized = normalize_language(language)
+    if normalized != "Python":
+        return generic_variable_context(code_string, normalized)
+
     tree = ast.parse(code_string)
     visitor = VariableContextTracker()
     visitor.visit(tree)

@@ -12,13 +12,27 @@ def posts() -> rx.Component:
                 rx.vstack(
             rx.heading("Review Code", size="7", color="#f8fafc", margin_top="0.75rem"),
             rx.text(
-                "Paste Python code and run a full analysis using your existing backend pipeline.",
+                "Paste code in any supported language and run a full analysis.",
                 color="#cbd5e1",
+            ),
+            rx.hstack(
+                rx.text("Language", color="#93c5fd", font_weight="600"),
+                rx.select(
+                    ReviewerState.available_languages,
+                    value=ReviewerState.selected_language,
+                    on_change=ReviewerState.update_language,
+                    width="220px",
+                    color="#e2e8f0",
+                    background="#0b1220",
+                    border="1px solid #334155",
+                ),
+                spacing="3",
+                align="center",
             ),
             rx.text_area(
                 value=ReviewerState.code_input,
                 on_change=ReviewerState.update_code_input,
-                placeholder="Paste your Python code here...",
+                placeholder="Paste your source code here...",
                 min_height="280px",
                 width="100%",
                 background="#0b1220",
@@ -193,9 +207,19 @@ def posts() -> rx.Component:
                     ReviewerState.unused_variables,
                     lambda item: rx.text(item, color="#e2e8f0", width="100%"),
                 ),
-                rx.text("PEP 8 Violations", color="#93c5fd", font_weight="600", margin_top="0.75rem"),
+                rx.text("Style Violations", color="#93c5fd", font_weight="600", margin_top="0.75rem"),
                 rx.foreach(
-                    ReviewerState.pep8_violations,
+                    ReviewerState.style_violations,
+                    lambda item: rx.text(item, color="#e2e8f0", width="100%"),
+                ),
+                rx.text("External Linter Tool Status", color="#93c5fd", font_weight="600", margin_top="0.75rem"),
+                rx.foreach(
+                    ReviewerState.external_linter_tool_status,
+                    lambda item: rx.text(item, color="#e2e8f0", width="100%"),
+                ),
+                rx.text("External Linter Findings", color="#93c5fd", font_weight="600", margin_top="0.75rem"),
+                rx.foreach(
+                    ReviewerState.external_linter_violations,
                     lambda item: rx.text(item, color="#e2e8f0", width="100%"),
                 ),
                 width="100%",

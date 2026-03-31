@@ -8,5 +8,6 @@ anthropic
 reportlab
 reflex
 pycodestyle
+tree-sitter-languages
 
 reflex==0.8.28.post1

@@ -8,10 +8,12 @@ from reportlab.pdfgen import canvas
 
 from ai_suggestor import ask_ai_assistant
 from code_analyzer import analyze_code_pipeline
+from language_config import LANGUAGE_DEMOS, supported_languages
 
 
 class ReviewerState(rx.State):
     code_input: str = ""
+    selected_language: str = "Python"
     quality_grade: str = "N/A"
     issues_count: int = 0
     analysis_summary: str = ""
@@ -21,7 +23,9 @@ class ReviewerState(rx.State):
     unused_imports: list[str] = []
     unused_functions: list[str] = []
     unused_variables: list[str] = []
-    pep8_violations: list[str] = []
+    style_violations: list[str] = []
+    external_linter_violations: list[str] = []
+    external_linter_tool_status: list[str] = []
     created_variables: list[str] = []
     used_variables: list[str] = []
     history_entries: list[dict[str, str]] = []
@@ -34,19 +38,15 @@ class ReviewerState(rx.State):
     def update_code_input(self, value: str) -> None:
         self.code_input = value
 
+    @rx.var
+    def available_languages(self) -> list[str]:
+        return supported_languages()
+
+    def update_language(self, value: str) -> None:
+        self.selected_language = value
+
     def load_demo(self) -> None:
-        self.code_input = (
-            "import os\n"
-            "\n"
-            "def add_numbers(nums):\n"
-            "    total = 0\n"
-            "    for i in range(len(nums)):\n"
-            "        total += nums[i]\n"
-            "    return total\n"
-            "\n"
-            "unused_var = 42\n"
-            "print(add_numbers([1,2,3]))\n"
-        )
+        self.code_input = LANGUAGE_DEMOS.get(self.selected_language, LANGUAGE_DEMOS["Python"])
 
     @rx.var
     def original_code_with_lines(self) -> str:
@@ -65,6 +65,7 @@ class ReviewerState(rx.State):
 
         return (
             f"Code Review Report\n\n"
+            f"Language: {self.selected_language}\n"
             f"Quality Grade: {self.quality_grade}\n"
             f"Issues Found: {self.issues_count}\n\n"
             f"Analysis Summary\n"
@@ -119,7 +120,7 @@ class ReviewerState(rx.State):
             self.error_message = "Please paste some code first."
             return
 
-        result = analyze_code_pipeline(self.code_input, "Python")
+        result = analyze_code_pipeline(self.code_input, self.selected_language)
         if not result.get("success", False):
             self.error_message = result.get("error", "Analysis failed.")
             return
@@ -145,10 +146,24 @@ class ReviewerState(rx.State):
             f"{item.get('name', 'unknown')} - line {item.get('line', '?')}"
             for item in static.get("unused_variables", [])
         ]
-        self.pep8_violations = [
-            f"{item.get('code', 'PEP8')} - {item.get('message', 'Style violation')} "
+        self.style_violations = [
+            f"{item.get('code', 'STYLE')} - {item.get('message', 'Style violation')} "
             f"(line {item.get('line', '?')}, col {item.get('column', '?')})"
-            for item in static.get("pep8_violations", [])
+            for item in static.get("style_violations", [])
+        ]
+        self.external_linter_violations = [
+            f"{item.get('tool', 'linter')} {item.get('code', 'LINT')} - {item.get('message', 'Issue')} "
+            f"(line {item.get('line', '?')}, col {item.get('column', '?')})"
+            for item in static.get("external_linter_violations", [])
+        ]
+        self.external_linter_tool_status = [
+            (
+                f"{item.get('tool', 'tool')}: "
+                f"{'available' if item.get('available', False) else 'not available'}"
+                f" | issues: {item.get('issues', 0)}"
+                f"{(' | ' + str(item.get('note'))) if item.get('note') else ''}"
+            )
+            for item in static.get("external_linter_tool_status", [])
         ]
 
         variable_context = result.get("variable_context", {})
@@ -168,10 +183,11 @@ class ReviewerState(rx.State):
         history_record = {
             "id": record_id,
             "summary": (
-                f"{timestamp} | Grade: {self.quality_grade} | "
+                f"{timestamp} | {self.selected_language} | Grade: {self.quality_grade} | "
                 f"Issues: {self.issues_count} | {snippet}"
             ),
             "timestamp": timestamp,
+            "language": self.selected_language,
             "grade": self.quality_grade,
             "issues_count": str(self.issues_count),
             "analysis_summary": self.analysis_summary,

@@ -56,7 +56,7 @@ def history() -> rx.Component:
                                 ReviewerState.selected_history_id == entry["id"],
                                 rx.box(
                                     rx.text(
-                                        f"Timestamp: {entry['timestamp']} | Grade: {entry['grade']} | Issues: {entry['issues_count']}",
+                                        f"Timestamp: {entry['timestamp']} | Language: {entry.get('language', 'Python')} | Grade: {entry['grade']} | Issues: {entry['issues_count']}",
                                         color="#93c5fd",
                                         margin_top="0.8rem",
                                     ),
