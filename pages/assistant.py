@@ -1,6 +1,7 @@
 import reflex as rx
 
 from components.navbar import navbar
+from components.premium import staggered_panel
 from full_stack_using_reflex.state import ReviewerState
 
 
@@ -85,23 +86,24 @@ def assistant() -> rx.Component:
         rx.container(
             rx.vstack(
                 navbar(),
-                rx.vstack(
+                staggered_panel(
                     rx.hstack(
-                        rx.badge("AI Assistant", color_scheme="cyan", variant="soft"),
+                        rx.heading("AI Assistant", size="7", color="#f8fafc"),
                         rx.spacer(),
                         rx.button(
                             "Clear Chat",
                             on_click=ReviewerState.clear_assistant_chat,
                             variant="outline",
-                            color_scheme="red",
+                            color_scheme="orange",
                             size="1",
+                            border_radius="10px",
                         ),
                         width="100%",
                     ),
                     rx.heading("Ask the AI Assistant", size="8", color="#f8fafc"),
                     rx.text(
                         "Ask follow-up questions on your analysis, suggested fixes, security, or optimizations.",
-                        color="#cbd5e1",
+                        color="#c2d4ee",
                         font_size="1.05rem",
                     ),
                     rx.cond(
@@ -112,6 +114,9 @@ def assistant() -> rx.Component:
                                 "No messages yet. Ask your first question about the analyzed code.",
                                 color="#94a3b8",
                             ),
+                            background="rgba(7, 18, 36, 0.66)",
+                            border="1px solid rgba(149, 182, 225, 0.24)",
+                            border_radius="14px",
                             align="center",
                             justify="center",
                             width="100%",
@@ -130,9 +135,13 @@ def assistant() -> rx.Component:
                             spacing="3",
                             align="start",
                             padding_y="0.4rem",
+                            background="rgba(6, 15, 33, 0.56)",
+                            border="1px solid rgba(149, 182, 225, 0.24)",
+                            border_radius="14px",
+                            padding_x="0.75rem",
                         ),
                     ),
-                    rx.divider(border_color="#334155", width="100%"),
+                    rx.divider(border_color="rgba(149, 182, 225, 0.24)", width="100%"),
                     rx.text_area(
                         value=ReviewerState.assistant_prompt,
                         on_change=ReviewerState.update_assistant_prompt,
@@ -140,10 +149,10 @@ def assistant() -> rx.Component:
                         width="100%",
                         min_height="90px",
                         max_height="180px",
-                        background="#111827",
+                        background="rgba(8, 18, 36, 0.82)",
                         color="#f8fafc",
-                        border="1px solid #334155",
-                        border_radius="12px",
+                        border="1px solid rgba(151, 181, 223, 0.3)",
+                        border_radius="14px",
                     ),
                     rx.hstack(
                         rx.text(
@@ -155,9 +164,11 @@ def assistant() -> rx.Component:
                         rx.button(
                             "Send",
                             on_click=ReviewerState.send_assistant_message,
-                            color_scheme="cyan",
+                            color_scheme="orange",
                             size="2",
                             min_width="90px",
+                            border_radius="11px",
+                            box_shadow="0 8px 18px rgba(244, 171, 72, 0.32)",
                         ),
                         width="100%",
                     ),
@@ -166,6 +177,9 @@ def assistant() -> rx.Component:
                     align="start",
                     max_width="1000px",
                     margin="0 auto",
+                    padding="1.15rem",
+                    border_radius="18px",
+                    step=0,
                 ),
                 width="100%",
                 spacing="5",

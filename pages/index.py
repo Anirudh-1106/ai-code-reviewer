@@ -9,9 +9,8 @@ def index() -> rx.Component:
         rx.container(
             rx.vstack(
                 navbar(),
-                rx.divider(border_color="#263a5d", margin_y="0.9rem"),
                 hero(),
-                spacing="6",
+                spacing="8",
                 width="100%",
             ),
             max_width="1160px",

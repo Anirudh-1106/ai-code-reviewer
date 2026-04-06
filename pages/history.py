@@ -1,6 +1,7 @@
 import reflex as rx
 
 from components.navbar import navbar
+from components.premium import staggered_panel
 from full_stack_using_reflex.state import ReviewerState
 
 
@@ -17,24 +18,23 @@ def history() -> rx.Component:
                     "Clear History",
                     on_click=ReviewerState.clear_history,
                     variant="outline",
-                    color_scheme="red",
+                    color_scheme="orange",
+                    border_radius="10px",
                 ),
                 width="100%",
             ),
             rx.cond(
                 ReviewerState.history_entries.length() == 0,
-                rx.box(
+                staggered_panel(
                     rx.text("No reviews yet. Analyze code from the Review Code page."),
-                    width="100%",
-                    border="1px solid #334155",
-                    border_radius="12px",
-                    background="#0b1220",
+                    border_radius="14px",
                     padding="1rem",
+                    step=1,
                 ),
                 rx.vstack(
                     rx.foreach(
                         ReviewerState.history_entries,
-                        lambda entry: rx.box(
+                        lambda entry: staggered_panel(
                             rx.hstack(
                                 rx.text(entry["summary"], color="#cbd5e1", width="100%"),
                                 rx.button(
@@ -46,7 +46,8 @@ def history() -> rx.Component:
                                     on_click=ReviewerState.toggle_history_entry(entry["id"]),
                                     size="1",
                                     variant="outline",
-                                    color_scheme="cyan",
+                                    color_scheme="orange",
+                                    border_radius="10px",
                                 ),
                                 width="100%",
                                 align="center",
@@ -81,11 +82,9 @@ def history() -> rx.Component:
                                     width="100%",
                                 ),
                             ),
-                            width="100%",
-                            border="1px solid #334155",
-                            border_radius="10px",
-                            background="#0b1220",
+                            border_radius="14px",
                             padding="0.9rem",
+                            step=2,
                         ),
                     ),
                     width="100%",

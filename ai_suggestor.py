@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+import threading
 
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -14,12 +15,62 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
 
 
+REVIEW_POLICY = """You are an AI code reviewer for multiple programming languages.
+
+Analyze the given code strictly based on its programming language.
+
+Rules:
+- Do NOT treat comments as executable code.
+- Do NOT flag language keywords, standard libraries, or headers as errors.
+- Follow conventions appropriate to the language (do not apply rules from other languages).
+- Focus only on real issues:
+    - Logic bugs
+    - Security vulnerabilities
+    - Performance problems
+
+Avoid:
+- False positives
+- Generic or incorrect warnings
+- Language-inappropriate suggestions
+
+Output requirements:
+- List real issues with severity (High, Medium, Low)
+- Give a short explanation for each issue
+- Provide improved code only if necessary
+- If no issues, say exactly: "No major issues found"
+""".strip()
+
+
 def _build_model() -> ChatGroq:
     return ChatGroq(
         model="llama-3.1-8b-instant",
         api_key=os.getenv("GROQ_API_KEY"),
+        timeout=8,
+        max_retries=0,
         temperature=0,
     )
+
+
+def _run_with_timeout(func, timeout_seconds: int):
+    result = {}
+
+    def runner() -> None:
+        try:
+            result["value"] = func()
+        except Exception as exc:
+            result["error"] = exc
+
+    thread = threading.Thread(target=runner, daemon=True)
+    thread.start()
+    thread.join(timeout_seconds)
+
+    if thread.is_alive():
+        raise TimeoutError(f"AI request timed out after {timeout_seconds} seconds")
+
+    if "error" in result:
+        raise result["error"]
+
+    return result.get("value")
 
 
 def _static_issue_strings(issues: dict) -> list:
@@ -153,7 +204,9 @@ def get_review_metadata(code_string: str, issues: dict, language: str) -> dict:
     llm = _build_model()
     issues_text = _issues_text(issues, include_lines=True)
 
-    prompt = f"""You are a senior {language} code reviewer. Analyze this {language} code and the issues found.
+    prompt = f"""{REVIEW_POLICY}
+
+You are reviewing {language} code.
 
 CODE:
 {code_string}
@@ -175,10 +228,19 @@ The JSON must have exactly these keys:
 }}
 
 IMPORTANT: issues_found must be a JSON array of strings.
+Each issues_found entry must use this format:
+- "High: <real issue> - <short explanation>"
+- "Medium: <real issue> - <short explanation>"
+- "Low: <real issue> - <short explanation>"
+
+If no major issues are found, issues_found must be exactly:
+["No major issues found"]
+
+Ignore language-inappropriate rules and avoid false positives.
 Do NOT include any code in your response."""
 
     messages = [
-        SystemMessage(content="You are a strict code reviewer. Respond only with valid JSON."),
+        SystemMessage(content=f"You are a strict {language} code reviewer. Respond only with valid JSON."),
         HumanMessage(content=prompt),
     ]
 
@@ -215,7 +277,9 @@ def get_improved_code(code_string: str, issues: dict, language: str) -> str:
     llm = _build_model()
     issues_text = _issues_text(issues, include_lines=False)
 
-    prompt = f"""You are an expert {language} developer. Rewrite the following code applying ALL improvements listed.
+    prompt = f"""{REVIEW_POLICY}
+
+You are an expert {language} developer. Rewrite the following code only if necessary based on real issues.
 
 ORIGINAL CODE:
 {code_string}
@@ -225,6 +289,8 @@ REQUIRED IMPROVEMENTS:
 - Keep behavior equivalent while improving clarity and maintainability
 - Apply language-idiomatic patterns and modern best practices
 - Preserve public interfaces unless they are clearly incorrect
+
+If there are no major issues, return the original code unchanged.
 
 OUTPUT RULES:
 - Output ONLY raw {language} code
@@ -253,8 +319,15 @@ OUTPUT RULES:
 
 def get_ai_review(code_string: str, issues: dict, language: str = "Python") -> dict:
     try:
-        metadata = get_review_metadata(code_string, issues, language)
-        improved = get_improved_code(code_string, issues, language)
+        payload = _run_with_timeout(
+            lambda: {
+                "metadata": get_review_metadata(code_string, issues, language),
+                "improved": get_improved_code(code_string, issues, language),
+            },
+            timeout_seconds=10,
+        )
+        metadata = payload["metadata"]
+        improved = payload["improved"]
 
         fallback = not improved.strip() or improved.strip() == code_string.strip()
         if fallback:
@@ -292,7 +365,7 @@ def get_ai_review(code_string: str, issues: dict, language: str = "Python") -> d
         fallback_grade = _grade_from_issue_count(len(fallback_issues))
         return {
             "quality_grade": fallback_grade,
-            "analysis_summary": "AI response format was invalid, so static analysis findings are shown.",
+            "analysis_summary": "AI review was unavailable or timed out, so static analysis findings are shown.",
             "issues_found": fallback_issues,
             "improved_code": code_string,
             "detailed_explanations": {
@@ -327,7 +400,7 @@ def ask_ai_assistant(question: str, code_context: str, chat_history: list) -> st
     messages.append(HumanMessage(content=question))
 
     try:
-        response = model.invoke(messages)
+        response = _run_with_timeout(lambda: model.invoke(messages), timeout_seconds=10)
         return response.content if hasattr(response, "content") else str(response)
     except Exception as exc:
         return f"Unable to get AI response: {exc}"

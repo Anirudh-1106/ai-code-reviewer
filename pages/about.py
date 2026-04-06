@@ -1,6 +1,7 @@
 import reflex as rx
 
 from components.navbar import navbar
+from components.premium import premium_panel, staggered_panel
 
 
 def about() -> rx.Component:
@@ -8,9 +9,8 @@ def about() -> rx.Component:
         rx.container(
             rx.vstack(
                 navbar(),
-                rx.box(
+                staggered_panel(
                     rx.vstack(
-                        rx.badge("PROJECT OVERVIEW", color_scheme="cyan", variant="soft"),
                         rx.heading("About AI Code Reviewer", size="8", color="#f8fafc"),
                         rx.text(
                             "AI Code Reviewer is a Reflex-powered platform for automated code quality analysis. "
@@ -27,13 +27,12 @@ def about() -> rx.Component:
                     width="100%",
                     max_width="1100px",
                     margin="0 auto",
-                    border="1px solid #1f365d",
                     border_radius="18px",
-                    background="linear-gradient(150deg, rgba(20, 32, 58, 0.72) 0%, rgba(7, 16, 36, 0.86) 60%)",
                     padding={"base": "1rem", "md": "1.25rem"},
+                    step=0,
                 ),
                 rx.grid(
-                    rx.box(
+                    staggered_panel(
                         rx.heading("What This App Does", size="5", margin_bottom="0.7rem"),
                         rx.vstack(
                             rx.text("- Parses multiple languages (Python, JS/TS, Java, C/C++, Go, Rust) and checks syntax health."),
@@ -47,12 +46,11 @@ def about() -> rx.Component:
                             color="#cbd5e1",
                         ),
                         width="100%",
-                        border="1px solid #334155",
                         border_radius="14px",
-                        background="#0b1220",
                         padding="1rem",
+                        step=1,
                     ),
-                    rx.box(
+                    staggered_panel(
                         rx.heading("Analysis Pipeline", size="5", margin_bottom="0.7rem"),
                         rx.vstack(
                             rx.text("1. User submits code from Review Code page."),
@@ -65,16 +63,15 @@ def about() -> rx.Component:
                             color="#cbd5e1",
                         ),
                         width="100%",
-                        border="1px solid #334155",
                         border_radius="14px",
-                        background="#0b1220",
                         padding="1rem",
+                        step=2,
                     ),
                     columns={"base": "1", "md": "2"},
                     spacing="4",
                     width="100%",
                 ),
-                rx.box(
+                staggered_panel(
                     rx.heading("Technology Stack", size="5", margin_bottom="0.7rem"),
                     rx.text(
                         "Frontend: Reflex\n"
@@ -86,10 +83,9 @@ def about() -> rx.Component:
                         line_height="1.65",
                     ),
                     width="100%",
-                    border="1px solid #334155",
                     border_radius="14px",
-                    background="#0b1220",
                     padding="1rem",
+                    step=3,
                 ),
                 spacing="5",
                 align="start",

@@ -35,6 +35,183 @@ class ReviewerState(rx.State):
     error_message: str = ""
     ai_fallback: bool = False
 
+    @staticmethod
+    def _severity_for_issue(issue: str) -> str:
+        text = issue.lower()
+        critical_terms = [
+            "vulnerability",
+            "security",
+            "injection",
+            "xss",
+            "critical",
+            "rce",
+            "out-of-bounds",
+        ]
+        high_terms = [
+            "error",
+            "undefined",
+            "failed",
+            "exception",
+            "missing",
+            "not found",
+            "syntax",
+        ]
+        medium_terms = [
+            "unused",
+            "style",
+            "complexity",
+            "performance",
+            "warning",
+            "lint",
+        ]
+        low_terms = [
+            "best practice",
+            "readability",
+            "documentation",
+            "comment",
+        ]
+
+        if any(term in text for term in critical_terms):
+            return "Critical"
+        if any(term in text for term in high_terms):
+            return "High"
+        if any(term in text for term in medium_terms):
+            return "Medium"
+        if any(term in text for term in low_terms):
+            return "Low"
+        return "Info"
+
+    @staticmethod
+    def _severity_style(severity: str) -> dict:
+        palette = {
+            "Critical": {
+                "fg": "#fecaca",
+                "bg": "rgba(127, 29, 29, 0.42)",
+                "border": "1px solid rgba(248, 113, 113, 0.52)",
+            },
+            "High": {
+                "fg": "#fed7aa",
+                "bg": "rgba(124, 45, 18, 0.38)",
+                "border": "1px solid rgba(251, 146, 60, 0.45)",
+            },
+            "Medium": {
+                "fg": "#fde68a",
+                "bg": "rgba(113, 63, 18, 0.35)",
+                "border": "1px solid rgba(245, 158, 11, 0.44)",
+            },
+            "Low": {
+                "fg": "#bfdbfe",
+                "bg": "rgba(30, 64, 175, 0.28)",
+                "border": "1px solid rgba(96, 165, 250, 0.42)",
+            },
+            "Info": {
+                "fg": "#c4b5fd",
+                "bg": "rgba(67, 56, 202, 0.25)",
+                "border": "1px solid rgba(139, 92, 246, 0.4)",
+            },
+        }
+        return palette.get(severity, palette["Info"])
+
+    @rx.var
+    def severity_breakdown(self) -> list[dict]:
+        order = ["Critical", "High", "Medium", "Low", "Info"]
+        counts = {key: 0 for key in order}
+
+        for issue in self.issues_found:
+            severity = self._severity_for_issue(issue)
+            counts[severity] += 1
+
+        output = []
+        for severity in order:
+            count = counts[severity]
+            if count <= 0:
+                continue
+            style = self._severity_style(severity)
+            output.append(
+                {
+                    "severity": severity,
+                    "count": str(count),
+                    "fg": style["fg"],
+                    "bg": style["bg"],
+                    "border": style["border"],
+                }
+            )
+        return output
+
+    @rx.var
+    def grouped_external_issues(self) -> list[str]:
+        external = []
+        external_terms = [
+            "eslint",
+            "tsc",
+            "golangci",
+            "go vet",
+            "rustc",
+            "javac",
+            "compiler",
+        ]
+
+        for issue in self.issues_found:
+            text = issue.lower()
+            if any(term in text for term in external_terms):
+                external.append(issue)
+        return external
+
+    @rx.var
+    def grouped_static_issues(self) -> list[str]:
+        static = []
+        external_terms = [
+            "eslint",
+            "tsc",
+            "golangci",
+            "go vet",
+            "rustc",
+            "javac",
+            "compiler",
+        ]
+
+        for issue in self.issues_found:
+            text = issue.lower()
+            if any(term in text for term in external_terms):
+                continue
+            if (
+                "unused" in text
+                or "undefined" in text
+                or "style" in text
+                or "lint" in text
+                or "syntax" in text
+            ):
+                static.append(issue)
+        return static
+
+    @rx.var
+    def grouped_ai_issues(self) -> list[str]:
+        ai = []
+        external_terms = [
+            "eslint",
+            "tsc",
+            "golangci",
+            "go vet",
+            "rustc",
+            "javac",
+            "compiler",
+        ]
+
+        for issue in self.issues_found:
+            text = issue.lower()
+            if any(term in text for term in external_terms):
+                continue
+            if (
+                "unused" in text
+                or "undefined" in text
+                or "style" in text
+                or "lint" in text
+                or "syntax" in text
+            ):
+                continue
+            ai.append(issue)
+        return ai
+
     def update_code_input(self, value: str) -> None:
         self.code_input = value
 
